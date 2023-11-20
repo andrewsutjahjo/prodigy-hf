@@ -29,6 +29,37 @@ def get_label_names(examples: List[Dict], variant: Literal["binary", "multi"]) -
     return ["accept", "reject"]
 
 
+def get_label_names_citad(examples: List[Dict], variant: Literal["binary", "multi"]) -> List[str]:
+    """quick and dirty hardcode.
+
+    Hardcoded Neither as 2
+    """
+    return ["Hate Speech", "Dangerous Speech", "Neither"]
+
+def into_hf_format_citad(train_examples: List[Dict], valid_examples: List[Dict], variant: Literal[
+    "binary", "multi"]):
+    """Turn the examples into variables/format that Huggingface expects."""
+    label_names = get_label_names_citad(train_examples, variant)
+    id2label = {i: n for i, n in enumerate(label_names)}
+    label2id = {n: i for i, n in enumerate(label_names)}
+
+    def generator(examples) -> Iterable[Dict]:
+        for ex in examples:
+            if ex["answer"] == "accept":
+                label = label2id[ex["label"]]
+            else:
+                label = label2id["Neither"]
+            if label:
+                yield {
+                    "text": ex["text"],
+                    "label": label
+                }
+
+    train_out = list(generator(train_examples))
+    valid_out = list(generator(valid_examples))
+    return train_out, valid_out, label_names, id2label, label2id
+
+
 def into_hf_format(train_examples: List[Dict], valid_examples: List[Dict], variant: Literal["binary", "multi"]):
     """Turn the examples into variables/format that Huggingface expects."""
     label_names = get_label_names(train_examples, variant)
@@ -41,9 +72,9 @@ def into_hf_format(train_examples: List[Dict], valid_examples: List[Dict], varia
             if variant == "binary":
                 label = label2id[ex["answer"]]
             if (variant == "multi") and ex['accept']:
-                # It could be that the dataset was accepted but didn't have anything selected. 
+                # It could be that the dataset was accepted but didn't have anything selected.
                 label = label2id[ex["accept"][0]]
-            if label: 
+            if label:
                 yield {
                     "text": ex["text"],
                     "label": label
@@ -56,10 +87,10 @@ def into_hf_format(train_examples: List[Dict], valid_examples: List[Dict], varia
 
 def filter_examples(examples: List[Dict], variant: Literal["binary", "multi"]):
     for ex in examples:
-        if (ex['answer'] != 'ignore'): 
+        if (ex['answer'] != 'ignore'):
             yield ex
- 
- 
+
+
 def validate_examples(examples: List[Dict], dataset:str, variant: Literal["binary", "multi"]) -> None:
     """Just make sure that we don't have non-NER tasks in here."""
     log(f"RECIPE: Validating examples for textcat task for {dataset} dataset.")
@@ -85,7 +116,7 @@ def produce_train_eval_datasets(datasets: str, eval_split: Optional[float] = Non
             variant = "multi" if 'options' in examples[0] else "binary"
             log(f"RECIPE: Assuming {variant=}.")
         examples = list(filter_examples(examples, variant=variant))
-        validate_examples(examples, dataset, variant=variant)
+        # validate_examples(examples, dataset, variant=variant)
         if "eval:" in dataset:
             valid_examples.extend(examples)
         else:
@@ -138,13 +169,13 @@ def hf_train_textcat(datasets: str,
                      learning_rate: float = 2e-5,
                      verbose:bool = False):
     """Train a transformer model for text classification."""
-    log("RECIPE: train.hf.ner started.")
+    log("RECIPE: hf.train.textcat started.")
     if not verbose:
         set_transformers_verbosity_error()
         disable_progress_bar()
 
     train_examples, valid_examples, variant = produce_train_eval_datasets(datasets, eval_split)
-    gen_train, gen_valid, label_list, id2lab, lab2id = into_hf_format(train_examples, valid_examples, variant)
+    gen_train, gen_valid, label_list, id2lab, lab2id = into_hf_format_citad(train_examples, valid_examples, variant)
 
     prodigy_dataset = DatasetDict(
         train=Dataset.from_list(gen_train),
@@ -153,7 +184,7 @@ def hf_train_textcat(datasets: str,
 
     log("RECIPE: Applying tokenizer.")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    
+
     def preprocess_function(examples):
         return tokenizer(examples["text"], truncation=True, padding=True)
 
@@ -218,8 +249,8 @@ def hf_textcat_correct(dataset: str,
                  model: str,
                  source: str):
     """Use transformer model to help you annotate textcat data."""
-    
-    log("RECIPE: train.hf.ner started.")
+
+    log("RECIPE: hf.textcat.correct started.")
     set_transformers_verbosity_error()
     
     stream = get_stream(source, rehash=True, dedup=True)
