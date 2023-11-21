@@ -1,5 +1,6 @@
 import random
 import time
+import math
 from pathlib import Path
 from typing import Dict, Iterable, List, Literal, Optional
 
@@ -237,6 +238,33 @@ def add_model_predictions(stream, hf_pipeline, model_labels):
         yield ex
 
 
+def prefer_uncertain_model_predictions(stream, hf_pipeline, model_labels, tokenizer, stddev=0.1):
+    i = 0
+    for ex in stream:
+        out = hf_pipeline(
+            tokenizer.convert_ids_to_tokens(
+                tokenizer.encode(ex["text"],truncation=True, padding=True)
+            )
+        )[0]
+        score = out['score']
+        distance = abs(score - 0.5)
+        # Calculate probability based on Gaussian distribution, clip between 0 and 1
+        probability = max(0.0, min(1.0, math.exp(-0.5 * (distance / stddev) ** 2)))
+        # Decide whether to keep the example based on probability
+        if random.random() > probability:
+            i += 1
+            if i % 20 == 0:
+                msg.info(f"{i} examples skipped")
+            continue
+        ex['options'] = []
+        for lab in model_labels:
+            option = {"id": lab, "text": lab}
+            if lab == out['label']:
+                option['meta'] = out['score']
+            ex['options'].append(option)
+        ex['accept'] = [out['label']]
+        yield ex
+
 @recipe(
     "hf.textcat.correct",
     # fmt: off
@@ -254,7 +282,10 @@ def hf_textcat_correct(dataset: str,
     set_transformers_verbosity_error()
     
     stream = get_stream(source, rehash=True, dedup=True)
-    tfm_model = pipeline("text-classification", model=model)
+    log("RECIPE: Applying tokenizer.")
+    tokenizer = AutoTokenizer.from_pretrained(model)
+    tfm_model = pipeline("text-classification", model=model, tokenizer=tokenizer)
+
     model_labels = list(tfm_model.model.config.label2id.keys())
     log(f"RECIPE: Transformer model loaded with {model_labels=}.")
 
@@ -262,7 +293,8 @@ def hf_textcat_correct(dataset: str,
     # possible labels are "ACCEPT" and "REJECT" and we don't have access to the original label.
     if set(model_labels) == set(["accept", "reject"]):
         msg.fail("This recipe only supports Hugging Face models that are trained on non-binary data.", exits=True)
-    stream.apply(add_model_predictions, hf_pipeline=tfm_model, model_labels=model_labels)
+    stream.apply(prefer_uncertain_model_predictions, hf_pipeline=tfm_model,
+                 model_labels=model_labels, tokenizer=tokenizer)
 
     return {
         "dataset": dataset,
