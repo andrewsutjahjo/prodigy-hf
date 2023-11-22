@@ -109,7 +109,7 @@ def build_metrics_func():
         """Taken from https://huggingface.co/docs/transformers/tasks/sequence_classification#evaluate"""
         predictions, labels = eval_pred
         predictions = np.argmax(predictions, axis=1)
-        return accuracy.compute(predictions=predictions, references=labels)
+        return roc_auc.compute(predictions=predictions, references=labels)
 
     return compute_metrics
 

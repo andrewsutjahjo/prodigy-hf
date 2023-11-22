@@ -265,6 +265,18 @@ def prefer_uncertain_model_predictions(stream, hf_pipeline, model_labels, tokeni
         ex['accept'] = [out['label']]
         yield ex
 
+
+def prefer_uncertain_model_scores(stream, stddev=0.1):
+    """Prefer uncertain model scores. Scores are already precomputed and saved with the results."""
+    for ex in stream:
+        for option in ex["options"]:
+            if "meta" in option:
+                score = option["meta"]
+        distance = abs(score - 0.5)
+        # Calculate probability based on Gaussian distribution, clip between 0 and 1
+        probability = max(0.0, min(1.0, math.exp(-0.5 * (distance / stddev) ** 2)))
+        yield ex
+
 @recipe(
     "hf.textcat.correct",
     # fmt: off
@@ -295,6 +307,32 @@ def hf_textcat_correct(dataset: str,
         msg.fail("This recipe only supports Hugging Face models that are trained on non-binary data.", exits=True)
     stream.apply(prefer_uncertain_model_predictions, hf_pipeline=tfm_model,
                  model_labels=model_labels, tokenizer=tokenizer)
+
+    return {
+        "dataset": dataset,
+        "view_id": "choice",
+        "stream": stream,
+        "config": {
+            "choice_style": "single",
+            "choice_auto_accept": True
+        }
+    }
+
+
+@recipe(
+    "hf.textcat.correct_precompute",
+    # fmt: off
+    dataset=Arg(help="Dataset to write annotations into"),
+    source=Arg(help="Source file to annotate"),
+    # fmt: on
+)
+def hf_correct_precompute(dataset: str,source: str):
+    """Use transformer model to help you annotate textcat data."""
+    log("RECIPE: hf.textcat.correct_precompute started.")
+
+    stream = get_stream(source, rehash=True, dedup=True)
+
+    stream.apply(prefer_uncertain_model_scores)
 
     return {
         "dataset": dataset,
