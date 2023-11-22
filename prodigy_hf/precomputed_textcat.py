@@ -103,13 +103,13 @@ def main():
 
 
 def build_metrics_func():
-    roc_auc = evaluate.load("roc_auc", "multiclass")
+    f1 = evaluate.load("f1")
     accuracy = evaluate.load("accuracy")
     def compute_metrics(eval_pred):
         """Taken from https://huggingface.co/docs/transformers/tasks/sequence_classification#evaluate"""
         predictions, labels = eval_pred
         predictions = np.argmax(predictions, axis=1)
-        return roc_auc.compute(predictions=predictions, references=labels)
+        return f1.compute(predictions=predictions, references=labels, average="weighted")
 
     return compute_metrics
 
