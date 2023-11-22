@@ -3,7 +3,7 @@ import argparse
 import evaluate
 import numpy as np
 import pandas as pd
-from datasets import Dataset
+from datasets import Dataset, DatasetDict
 
 from transformers import (
     AutoModelForSequenceClassification,
@@ -30,13 +30,32 @@ def main():
     args = parser.parse_args()
 
     train_x = pd.read_csv(args.trainx)[["text"]]
-    train_y = pd.read_csv(args.trainy)
+    train_y = pd.read_csv(args.trainy)[["label"]]
     eval_split = float(args.eval_split)
-    label_names = train_y.columns.tolist()
-    train_examples, valid_examples, train_labels, valid_labels = train_valid_split(train_x, train_y, eval_split)
-
+    label_names = train_y["label"].unique()
     id2label = {i: n for i, n in enumerate(label_names)}
     label2id = {n: i for i, n in enumerate(label_names)}
+
+    train_y = train_y.applymap(lambda x: label2id[x])
+
+    dataset_df = pd.concat([train_x, train_y], axis=1)
+    train_df, valid_df = train_valid_split(dataset_df, eval_split)
+    train_list = train_df.to_dict("records")
+    valid_list = valid_df.to_dict("records")
+    # ... making datasets is hard. This needs a hard refactor: using from_pandas complained
+    # about text in the labels
+    for item in train_list:
+        try:
+            item["label"] = int(item["label"])
+        except ValueError:
+            raise ValueError(f"item label: {item}")
+    for item in valid_list:
+        item["label"] = int(item["label"])
+
+    dataset_dict = DatasetDict(
+        train=Dataset.from_list(train_list),
+        eval=Dataset.from_list(valid_list),
+    )
 
     # Load the model and tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model)
@@ -45,10 +64,10 @@ def main():
     def preprocess_function(examples):
         return tokenizer(examples["text"], truncation=True, padding=True)
 
-    train_dataset = Dataset.from_pandas(train_examples)
-    valid_dataset = Dataset.from_pandas(valid_examples)
-    tokenized_dataset_train = train_dataset.map(preprocess_function, batched=True)
-    tokenized_dataset_valid = valid_dataset.map(preprocess_function, batched=True)
+    tokenized_dataset_dict = dataset_dict.map(
+        preprocess_function, batched=True
+    )
+
 
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
@@ -72,8 +91,8 @@ def main():
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=tokenized_dataset_train,
-        eval_dataset=tokenized_dataset_valid,
+        train_dataset=tokenized_dataset_dict["train"],
+        eval_dataset=tokenized_dataset_dict["eval"],
         tokenizer=tokenizer,
         data_collator=data_collator,
         compute_metrics=build_metrics_func(),
@@ -95,15 +114,13 @@ def build_metrics_func():
     return compute_metrics
 
 
-def train_valid_split(train_x, train_y, eval_split) -> \
-        Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def train_valid_split(df, eval_split) -> \
+        Tuple[pd.DataFrame, pd.DataFrame]:
     """Make a train validation split. No using sklearn because we don't want to import it."""
-    train_examples = train_x.sample(frac=eval_split, random_state=42)
-    valid_examples = train_x.drop(train_examples.index)
-    train_labels = train_y[train_y.index.isin(train_examples.index)]
-    valid_labels = train_y.drop(train_labels.index)
+    train_df = df.sample(frac=eval_split, random_state=42)
+    valid_df = df.drop(train_df.index)
 
-    return train_examples, valid_examples, train_labels, valid_labels
+    return train_df, valid_df
 
 
 if __name__ == "__main__":
