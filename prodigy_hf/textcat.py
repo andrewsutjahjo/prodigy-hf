@@ -266,8 +266,9 @@ def prefer_uncertain_model_predictions(stream, hf_pipeline, model_labels, tokeni
         yield ex
 
 
-def prefer_uncertain_model_scores(stream, stddev=0.1):
+def prefer_uncertain_model_scores(stream, stddev=0.3):
     """Prefer uncertain model scores. Scores are already precomputed and saved with the results."""
+    i = 0
     for ex in stream:
         for option in ex["options"]:
             if "meta" in option:
@@ -275,6 +276,11 @@ def prefer_uncertain_model_scores(stream, stddev=0.1):
         distance = abs(score - 0.5)
         # Calculate probability based on Gaussian distribution, clip between 0 and 1
         probability = max(0.0, min(1.0, math.exp(-0.5 * (distance / stddev) ** 2)))
+        if random.random() < probability:
+            i += 1
+            if i % 20 == 0:
+                msg.info(f"{i} examples skipped")
+            continue
         yield ex
 
 @recipe(
