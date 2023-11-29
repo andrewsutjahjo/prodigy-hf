@@ -62,7 +62,7 @@ def main():
 
 
     def preprocess_function(examples):
-        return tokenizer(examples["text"], truncation=True, padding=True)
+        return tokenizer(examples["text"], truncation=True, padding=True, max_length=512)
 
     tokenized_dataset_dict = dataset_dict.map(
         preprocess_function, batched=True

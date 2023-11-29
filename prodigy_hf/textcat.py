@@ -187,7 +187,7 @@ def hf_train_textcat(datasets: str,
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     def preprocess_function(examples):
-        return tokenizer(examples["text"], truncation=True, padding=True)
+        return tokenizer(examples["text"], truncation=True, padding=True, max_length=512)
 
     tokenized_dataset = prodigy_dataset.map(preprocess_function, batched=True)
 
