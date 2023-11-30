@@ -38,12 +38,18 @@ def stream_model_predictions(stream, hf_pipeline, model_labels, tokenizer):
             msg.warn(f"Failed to process example {ex['text']}.")
             continue
         ex['options'] = []
+        max_label = ""
+        max_score = 0.0
         for lab in model_labels:
             option = {"id": lab, "text": lab}
-            if lab == out['label']:
-                option['meta'] = out['score']
-            ex['options'].append(option)
-        ex['accept'] = [out['label']]
+            for label_option in out:
+                if lab == label_option['label']:
+                    option['meta'] = label_option['score']
+                    if label_option['score'] > max_score:
+                        max_score = label_option['score']
+                        max_label = label_option['label']
+                    ex['options'].append(option)
+        ex['accept'] = [max_label]
         i += 1
         if i % 100 == 0:
             msg.info(f"Processed {i} examples.")
@@ -69,7 +75,12 @@ def main():
     stream = get_stream(source, rehash=True, dedup=True)
     log("RECIPE: Applying tokenizer.")
     tokenizer = AutoTokenizer.from_pretrained(model)
-    tfm_model = pipeline("text-classification", model=model, tokenizer=tokenizer)
+    tfm_model = pipeline(
+        "text-classification",
+        model=model,
+        tokenizer=tokenizer,
+        top_k=None
+    )
 
     model_labels = list(tfm_model.model.config.label2id.keys())
     log(f"RECIPE: Transformer model loaded with {model_labels=}.")
