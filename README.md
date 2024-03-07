@@ -7,7 +7,7 @@ This repository contains recipes that can train huggingface models on datasets t
 You can install this plugin via `pip`. 
 
 ```
-pip install "prodigy-hf @ git+https://github.com/explosion/prodigy-hf"
+pip install "prodigy-hf @ git+https://github.com/andrewsutjahjo/prodigy-hf"
 ```
 
 To learn more about this plugin, you can check the [Prodigy docs](https://prodi.gy/docs/plugins/#hf).
